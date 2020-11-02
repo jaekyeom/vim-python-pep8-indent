@@ -113,12 +113,12 @@ endif
 function! s:find_opening_paren(lnum, col)
     " Return if cursor is in a comment.
     if synIDattr(synID(a:lnum, a:col, 0), 'name') =~? 'comment'
-        return [0, 0]
+        return [0, 0, '']
     endif
 
     call cursor(a:lnum, a:col)
 
-    let nearest = [0, 0]
+    let nearest = [0, 0, '']
     let timeout = g:python_pep8_indent_searchpair_timeout
     let skip_special_chars = 's:_skip_special_chars(line("."), col("."))'
     for [p, maxoff] in items(s:paren_pairs)
@@ -126,7 +126,7 @@ function! s:find_opening_paren(lnum, col)
         let next = searchpairpos(
            \ '\V'.p[0], '', '\V'.p[1], 'bnW', skip_special_chars, stopline, timeout)
         if next[0] && (next[0] > nearest[0] || (next[0] == nearest[0] && next[1] > nearest[1]))
-            let nearest = next
+            let nearest = next + [p]
         endif
     endfor
     return nearest
@@ -139,7 +139,7 @@ function! s:find_start_of_multiline_statement(lnum)
         if getline(lnum - 1) =~# '\\$'
             let lnum = prevnonblank(lnum - 1)
         else
-            let [paren_lnum, _] = s:find_opening_paren(lnum, 1)
+            let [paren_lnum, _, _] = s:find_opening_paren(lnum, 1)
             if paren_lnum < 1
                 return lnum
             else
@@ -204,7 +204,7 @@ endfunction
 
 " Line up with open parenthesis/bracket/brace.
 function! s:indent_like_opening_paren(lnum)
-    let [paren_lnum, paren_col] = s:find_opening_paren(a:lnum, 1)
+    let [paren_lnum, paren_col, paren_type] = s:find_opening_paren(a:lnum, 1)
     if paren_lnum <= 0
         return -2
     endif
@@ -222,7 +222,11 @@ function! s:indent_like_opening_paren(lnum)
         if starts_with_closing_paren && !hang_closing
             let res = base
         else
-            let res = base + s:sw()
+            if paren_type == '()'
+                let res = base + s:sw() + s:sw()
+            else
+                let res = base + s:sw()
+            endif
 
             " Special case for parenthesis.
             if text[paren_col-1] ==# '(' && getline(a:lnum) !~# '\v\)\s*:?\s*$'
@@ -239,7 +243,7 @@ function! s:indent_like_opening_paren(lnum)
     " from the next logical line.
     if text =~# b:control_statement && res == base + s:sw()
         " But only if not inside parens itself (Flake's E127).
-        let [paren_lnum, _] = s:find_opening_paren(paren_lnum, 1)
+        let [paren_lnum, _, _] = s:find_opening_paren(paren_lnum, 1)
         if paren_lnum <= 0
             return res + s:sw()
         endif
